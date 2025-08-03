@@ -1,13 +1,12 @@
 #!/bin/bash
 
 # ================================================================
-# N8N All-in-One Management Script v3
+# N8N All-in-One Management Script v3.1 (Anti-Flicker Edition)
 # Dùng cho Ubuntu/Debian. Yêu cầu quyền root.
-# Cung cấp các chức năng quản lý n8n, SSL, Database, Backup...
-# Phiên bản: 3.0
-# Phát hành ngày: 01-08-2025
+# Phiên bản: 3.1
+# Phát hành ngày: 03-08-2025
 # Phát triển bởi: Biệt Đội Tinh Nhuệ
-#  Liên hệ: https://bietdoitinhnhue.com
+#  Liên hệ: https://bietdoitinhnhue.com
 # ================================================================
 
 # ----------- Cấu hình màu sắc & biến toàn cục -----------
@@ -25,8 +24,6 @@ SERVICE_FILE="/etc/systemd/system/n8n.service"
 LOG_FILE="/var/log/n8n-management.log"
 BACKUP_DIR="/root/n8n-backups"
 
-mkdir -p "$BACKUP_DIR"
-
 # ----------- Kiểm tra quyền root -----------
 if [ "$(id -u)" -ne 0 ]; then
     echo -e "${RED}❌ Script này phải chạy với quyền root hoặc sudo.${NC}"
@@ -34,18 +31,35 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# ----------- Tối ưu hóa & Thiết lập ban đầu -----------
+mkdir -p "$BACKUP_DIR"
+# Lấy IP một lần duy nhất để tránh gọi curl liên tục <--- THAY ĐỔI
+SERVER_IP=$(curl -s ifconfig.me)
+
+# Hàm hiển thị header
+show_header() {
+    # Thay 'clear' bằng mã escape để về đầu màn hình và xóa <--- THAY ĐỔI
+    printf '\033[H\033[2J'
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗"
+    echo "║          N8N Management Script v3.1 - Biệt Đội Tinh Nhuệ      ║"
+    echo "╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo " Server IP: $SERVER_IP | $(date '+%Y-%m-%d %H:%M:%S') | Uptime: $(uptime -p)"
+    if systemctl is-active --quiet n8n; then
+        local domain=$(grep 'N8N_HOST' "$ENV_FILE" 2>/dev/null | cut -d'=' -f2)
+        echo -e "${GREEN} n8n: RUNNING $domain${NC}"
+    else
+        echo -e "${YELLOW} n8n: NOT RUNNING${NC}"
+    fi
+    echo ""
+}
+
 # ----------- Hàm tiện ích -----------
 log_action() { echo "$(date '+%Y-%m-%d %H:%M:%S') [$USER] $1" >> "$LOG_FILE"; }
 press_enter() { echo ""; read -p "Nhấn Enter để quay lại menu..."; }
 confirm_action() { read -p "$1 [y/N]: " resp; [[ "$resp" =~ ^([yY][eE][sS]|[yY])$ ]]; }
-
-# Xoá log >50MB hoặc >30 ngày
 cleanup_logs() { find /var/log -name "*.log" -size +50M -delete 2>/dev/null; find /var/log -name "*.log" -mtime +30 -delete 2>/dev/null; }
-
-# Backup file ENV trước khi thao tác nguy hiểm
 backup_env() { [ -f "$ENV_FILE" ] && cp "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%d_%H%M%S)"; }
 
-# Lấy domain từ ENV hoặc user nhập
 get_domain() {
     N8N_DOMAIN="${N8N_DOMAIN:-$(grep "N8N_HOST" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"')}"
     while [[ ! $N8N_DOMAIN =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]]; do
@@ -53,24 +67,25 @@ get_domain() {
     done
 }
 
-# Validate domain trỏ về IP server
 validate_domain_ip() {
-    local server_ip=$(curl -s ifconfig.me)
-    local domain_ip=$(dig +short "$N8N_DOMAIN" | tail -1)
-    if [[ "$server_ip" != "$domain_ip" ]]; then
-        echo -e "${YELLOW}⚠️  Domain $N8N_DOMAIN chưa trỏ về IP $server_ip (đang trỏ: $domain_ip)."
-        confirm_action "Tiếp tục thao tác dù có thể lỗi?" || return 1
+    # Đảm bảo có dnsutils (chứa lệnh dig) <--- THAY ĐỔI
+    if ! command -v dig &> /dev/null; then
+        echo -e "${YELLOW}Lệnh 'dig' không tồn tại. Đang cài đặt dnsutils...${NC}"
+        apt-get update > /dev/null && apt-get install -y dnsutils
+    fi
+    
+    local domain_ip=$(dig +short "$N8N_DOMAIN" A | tail -1)
+    if [[ "$SERVER_IP" != "$domain_ip" ]]; then
+        echo -e "${YELLOW}⚠️  Domain $N8N_DOMAIN chưa trỏ về IP $SERVER_IP (đang trỏ về: $domain_ip).${NC}"
+        confirm_action "Tiếp tục thao tác dù có thể lỗi SSL?" || return 1
     fi
     return 0
 }
 
-# Kiểm tra đã cài n8n chưa
 check_n8n() { [ -f "$SERVICE_FILE" ] || { echo -e "${YELLOW}n8n chưa được cài đặt.${NC}"; return 1; }; }
 
-# ----------- HEADER -----------
-for i in {1..10}; do echo ""; done
+# ----------- Các hàm chức năng chính (Nội dung không đổi) -----------
 
-# ----------- 1. Cài đặt n8n -----------
 install_n8n() {
     show_header
     echo "--- Cài đặt n8n, Nginx, SSL, Node.js ---"
@@ -147,14 +162,13 @@ EOF
     ln -sf "/etc/nginx/sites-available/$N8N_DOMAIN" "/etc/nginx/sites-enabled/$N8N_DOMAIN"
     nginx -t && systemctl reload nginx
 
-    manage_ssl
+    manage_ssl_internal
 
     log_action "Cài đặt n8n cho domain $N8N_DOMAIN"
     echo -e "${GREEN}✅ CÀI ĐẶT HOÀN TẤT!${NC}"
     echo "URL: https://$N8N_DOMAIN | User: admin | Pass: $N8N_PASSWORD"
 }
 
-# ----------- 2. Update n8n -----------
 update_n8n() {
     check_n8n || return
     show_header
@@ -166,7 +180,6 @@ update_n8n() {
     log_action "Update n8n"
 }
 
-# ----------- 3. Update Node.js & npm -----------
 update_node_npm() {
     show_header
     echo "--- Cập nhật Node.js và npm ---"
@@ -177,7 +190,6 @@ update_node_npm() {
     log_action "Update Node/npm"
 }
 
-# ----------- 4. 2FA Info -----------
 setup_n8n_2fa_info() {
     show_header
     echo -e "${CYAN}--- 2FA cho n8n (phiên bản community chưa hỗ trợ built-in 2FA) ---${NC}"
@@ -188,9 +200,9 @@ setup_n8n_2fa_info() {
     echo -e "${YELLOW}Đọc thêm: https://docs.n8n.io/hosting/advanced/authentication/${NC}"
 }
 
-# ----------- 5. Reset mật khẩu -----------
 reset_credentials() {
     check_n8n || return
+    show_header
     backup_env
     local current_user=$(grep "N8N_BASIC_AUTH_USER" "$ENV_FILE" | cut -d'=' -f2)
     NEW_PASSWORD=$(openssl rand -hex 12)
@@ -200,11 +212,7 @@ reset_credentials() {
     echo -e "${GREEN}✅ Đã đặt lại password!${NC} User: $current_user | Pass: $NEW_PASSWORD"
 }
 
-# ----------- 6. SSL Let's Encrypt -----------
-manage_ssl() {
-    show_header
-    get_domain
-    validate_domain_ip || return
+manage_ssl_internal() {
     echo "--> Cài đặt Certbot..."
     apt install -y certbot python3-certbot-nginx
     echo "--> Xử lý SSL cho $N8N_DOMAIN..."
@@ -213,10 +221,15 @@ manage_ssl() {
     echo -e "${GREEN}✅ SSL OK!${NC}"
 }
 
-# ----------- 7. Export/Backup n8n -----------
+manage_ssl() {
+    show_header
+    get_domain
+    validate_domain_ip || return
+    manage_ssl_internal
+}
+
 export_data() {
-    check_n8n || return
-    mkdir -p "$BACKUP_DIR"
+    check_n8n || return; show_header
     BACKUP_FILE="$BACKUP_DIR/n8n-data-$(date +%Y-%m-%d_%H%M).tar.gz"
     echo "Dừng n8n..."; systemctl stop n8n
     tar -czf "$BACKUP_FILE" -C "$N8N_HOME" .n8n
@@ -225,15 +238,12 @@ export_data() {
     echo -e "${GREEN}✅ Sao lưu thành công: $BACKUP_FILE${NC}"
 }
 
-# ----------- 8. Import/Restore n8n -----------
 import_data() {
-    check_n8n || return
-    show_header
+    check_n8n || return; show_header
     echo -e "${RED}CẢNH BÁO: Ghi đè toàn bộ dữ liệu n8n hiện tại!${NC}"
     read -p "Nhập đường dẫn file backup (.tar.gz): " BACKUP_FILE
     [ ! -f "$BACKUP_FILE" ] && { echo -e "${RED}❌ File không tồn tại!${NC}"; return; }
     confirm_action "Bạn chắc chắn phục hồi?" || return
-    # Backup tự động trước khi restore
     tar -czf "$BACKUP_DIR/n8n-pre-restore-$(date +%Y-%m-%d_%H%M).tar.gz" -C "$N8N_HOME" .n8n
     echo "Dừng n8n..."; systemctl stop n8n
     rm -rf "$N8N_DIR"; tar -xzf "$BACKUP_FILE" -C "$N8N_HOME"
@@ -243,24 +253,20 @@ import_data() {
     echo -e "${GREEN}✅ Phục hồi thành công!${NC}"
 }
 
-# ----------- 9. Gỡ cài đặt n8n -----------
 uninstall_n8n() {
-    check_n8n || return
-    show_header
+    check_n8n || return; show_header
     confirm_action "⚠️ GỠ CÀI ĐẶT n8n và file cấu hình. Tiếp tục?" || return
     N8N_DOMAIN=$(grep "N8N_HOST" "$ENV_FILE" | cut -d'=' -f2 | tr -d '"')
     systemctl stop n8n; systemctl disable n8n
     rm -f "$SERVICE_FILE" "/etc/nginx/sites-enabled/$N8N_DOMAIN" "/etc/nginx/sites-available/$N8N_DOMAIN"
     systemctl daemon-reload; systemctl reload nginx
     npm uninstall -g n8n
-    # Chống xóa user root
     [[ "$N8N_USER" == "root" || "$N8N_USER" == "" ]] && { echo "Không xóa user root!"; return; }
-    confirm_action "Xóa luôn user n8n và dữ liệu (workflows, credentials...)?" && userdel -r "$N8N_USER"
+    confirm_action "Xóa luôn user n8n và dữ liệu?" && userdel -r "$N8N_USER"
     log_action "Uninstall n8n domain $N8N_DOMAIN"
     echo -e "${GREEN}✅ Đã gỡ cài đặt n8n hoàn tất.${NC}"
 }
 
-# ----------- 10. Thông tin hệ thống + cleanup logs -----------
 show_system_info() {
     show_header
     echo "--- Dung lượng ổ cứng ---"; df -h
@@ -270,68 +276,37 @@ show_system_info() {
     log_action "Xem thông tin hệ thống"
 }
 
-# ----------- 11. Cài File Manager -----------
-install_file_manager() {
-    apt update; apt install -y mc
-    echo -e "${GREEN}Cài đặt 'mc' thành công! Gõ 'mc' để dùng.${NC}"
-    log_action "Cài Midnight Commander"
-}
+install_file_manager() { show_header; apt update; apt install -y mc; echo -e "${GREEN}Cài đặt 'mc' thành công! Gõ 'mc' để dùng.${NC}"; log_action "Cài Midnight Commander"; }
+manage_mysql() { show_header; apt update; apt install -y mysql-server; mysql_secure_installation; echo -e "${GREEN}MySQL Server đã sẵn sàng!${NC}"; log_action "Cài MySQL"; }
+manage_postgresql() { show_header; apt update; apt install -y postgresql postgresql-contrib; echo -e "${GREEN}PostgreSQL Server đã sẵn sàng!${NC}"; log_action "Cài PostgreSQL"; }
+setup_gdrive_backup() { show_header; if ! command -v rclone &> /dev/null; then curl https://rclone.org/install.sh | bash; fi; rclone config; echo -e "${GREEN}✅ Đã cấu hình rclone!${NC}"; log_action "Cấu hình rclone"; }
 
-# ----------- 12. Quản lý Database -----------
-manage_mysql() {
-    apt update; apt install -y mysql-server; mysql_secure_installation
-    echo -e "${GREEN}MySQL Server đã sẵn sàng!${NC}"
-    log_action "Cài MySQL"
-}
-manage_postgresql() {
-    apt update; apt install -y postgresql postgresql-contrib
-    echo -e "${GREEN}PostgreSQL Server đã sẵn sàng!${NC}"
-    log_action "Cài PostgreSQL"
-}
-
-# ----------- 13. Cấu hình rclone GDrive -----------
-setup_gdrive_backup() {
-    if ! command -v rclone &> /dev/null; then
-        curl https://rclone.org/install.sh | bash
-    fi
-    rclone config
-    echo -e "${GREEN}✅ Đã cấu hình rclone!${NC}"
-    log_action "Cấu hình rclone"
-}
-
-# ----------- 14. Backup MySQL to GDrive -----------
 backup_mysql_to_gdrive() {
-    read -p "Database cần backup: " DBNAME
-    read -p "User MySQL: " DBUSER
-    read -s -p "Password: " DBPASS; echo
-    read -p "Tên remote rclone (VD: gdrive): " RCLONE_REMOTE
-    FILE="mysql-${DBNAME}-$(date +%Y-%m-%d_%H%M).sql.gz"
-    mysqldump -u"$DBUSER" -p"$DBPASS" "$DBNAME" | gzip > "/tmp/$FILE"
-    rclone copy "/tmp/$FILE" "${RCLONE_REMOTE}:MySQL_Backups/"
-    rm "/tmp/$FILE"
-    echo -e "${GREEN}✅ Backup MySQL $DBNAME lên GDrive thành công!${NC}"
-    log_action "Backup MySQL $DBNAME lên GDrive"
+    show_header
+    read -p "Database cần backup: " DBNAME; read -p "User MySQL: " DBUSER; read -s -p "Password: " DBPASS; echo; read -p "Tên remote rclone (VD: gdrive): " RCLONE_REMOTE
+    FILE="mysql-${DBNAME}-$(date +%Y-%m-%d_%H%M).sql.gz"; mysqldump -u"$DBUSER" -p"$DBPASS" "$DBNAME" | gzip > "/tmp/$FILE"
+    rclone copy "/tmp/$FILE" "${RCLONE_REMOTE}:MySQL_Backups/"; rm "/tmp/$FILE"
+    echo -e "${GREEN}✅ Backup MySQL $DBNAME lên GDrive thành công!${NC}"; log_action "Backup MySQL $DBNAME lên GDrive"
 }
 
-# ----------- 15. Backup PostgreSQL to GDrive -----------
 backup_psql_to_gdrive() {
-    read -p "Database cần backup: " DBNAME
-    read -p "User PostgreSQL: " DBUSER
-    read -s -p "Password: " PGPASSWORD; echo
-    read -p "Tên remote rclone (VD: gdrive): " RCLONE_REMOTE
-    export PGPASSWORD
-    FILE="psql-${DBNAME}-$(date +%Y-%m-%d_%H%M).sql.gz"
-    pg_dump -U "$DBUSER" -h localhost -d "$DBNAME" | gzip > "/tmp/$FILE"
-    unset PGPASSWORD
-    rclone copy "/tmp/$FILE" "${RCLONE_REMOTE}:PostgreSQL_Backups/"
-    rm "/tmp/$FILE"
-    echo -e "${GREEN}✅ Backup PostgreSQL $DBNAME lên GDrive thành công!${NC}"
-    log_action "Backup PostgreSQL $DBNAME lên GDrive"
+    show_header
+    read -p "Database cần backup: " DBNAME; read -p "User PostgreSQL: " DBUSER; read -s -p "Password: " PGPASSWORD; echo; read -p "Tên remote rclone: " RCLONE_REMOTE
+    export PGPASSWORD; FILE="psql-${DBNAME}-$(date +%Y-%m-%d_%H%M).sql.gz"
+    pg_dump -U "$DBUSER" -h localhost -d "$DBNAME" | gzip > "/tmp/$FILE"; unset PGPASSWORD
+    rclone copy "/tmp/$FILE" "${RCLONE_REMOTE}:PostgreSQL_Backups/"; rm "/tmp/$FILE"
+    echo -e "${GREEN}✅ Backup PostgreSQL $DBNAME lên GDrive thành công!${NC}"; log_action "Backup PostgreSQL $DBNAME lên GDrive"
 }
 
 # ========================= MENU CHÍNH =========================
 main_menu() {
+    # Chuyển sang màn hình ảo khi bắt đầu và đặt bẫy để thoát an toàn <--- THAY ĐỔI
+    trap 'tput cnorm; tput rmcup; exit' EXIT INT TERM
+    tput smcup # Lưu màn hình hiện tại và chuyển sang màn hình ảo
+    tput civis # Ẩn con trỏ chuột
+
     while true; do
+        tput cnorm # Hiện lại con trỏ để người dùng nhập <--- THAY ĐỔI
         show_header
         echo -e "${GREEN}--- Quản lý N8N ---${NC}"
         echo " 1) Cài đặt n8n (Nginx, SSL)"
@@ -355,6 +330,7 @@ main_menu() {
         echo -e "${YELLOW}0) Thoát${NC}"
         echo ""
         read -p "Chọn chức năng: " choice
+        tput civis # Ẩn con trỏ khi đang xử lý tác vụ <--- THAY ĐỔI
 
         case "$choice" in
             1) install_n8n; press_enter ;;
@@ -369,7 +345,9 @@ main_menu() {
             10) show_system_info; press_enter ;;
             11) install_file_manager; press_enter ;;
             12)
+                tput cnorm # Hiện con trỏ để nhập lựa chọn db
                 read -p "Cài MySQL (m) hay PostgreSQL (p)? [m/p]: " db_choice
+                tput civis
                 case "$db_choice" in
                     m|M) manage_mysql ;;
                     p|P) manage_postgresql ;;
@@ -380,7 +358,7 @@ main_menu() {
             13) setup_gdrive_backup; press_enter ;;
             14) backup_mysql_to_gdrive; press_enter ;;
             15) backup_psql_to_gdrive; press_enter ;;
-            0) echo "Thoát."; exit 0 ;;
+            0) exit 0 ;;
             *) echo -e "${RED}❌ Lựa chọn không hợp lệ!${NC}"; press_enter ;;
         esac
     done
