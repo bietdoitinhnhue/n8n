@@ -6,7 +6,7 @@
 # Phiên bản: 3.1
 # Phát hành ngày: 03-08-2025
 # Phát triển bởi: Biệt Đội Tinh Nhuệ
-#  Liên hệ: https://bietdoitinhnhue.com
+# Liên hệ: https://bietdoitinhnhue.com
 # ================================================================
 
 # ----------- Cấu hình màu sắc & biến toàn cục -----------
@@ -41,7 +41,11 @@ show_header() {
     # Thay 'clear' bằng mã escape để về đầu màn hình và xóa <--- THAY ĐỔI
     printf '\033[H\033[2J'
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗"
-    echo "║          N8N Management Script v3.1 - Biệt Đội Tinh Nhuệ      ║"
+    echo "║         N8N Management Script v3.1 - Biệt Đội Tinh Nhuệ      ║"
+    echo "║         https://bietdoitinhnhue.com - Phát triển bởi BĐTNH   ║"
+    echo "║         CAFE - Vietcombank - 9968333342                      ║"
+    echo "╠         Phiên bản: 3.1                                       ╣"  
+    echo "║         Phát hành ngày: 03-08-2025                           ║"
     echo "╚══════════════════════════════════════════════════════════════╝${NC}"
     echo " Server IP: $SERVER_IP | $(date '+%Y-%m-%d %H:%M:%S') | Uptime: $(uptime -p)"
     if systemctl is-active --quiet n8n; then
@@ -63,7 +67,7 @@ backup_env() { [ -f "$ENV_FILE" ] && cp "$ENV_FILE" "$ENV_FILE.bak-$(date +%Y%m%
 get_domain() {
     N8N_DOMAIN="${N8N_DOMAIN:-$(grep "N8N_HOST" "$ENV_FILE" 2>/dev/null | cut -d'=' -f2 | tr -d '"')}"
     while [[ ! $N8N_DOMAIN =~ ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$ ]]; do
-        read -p "Nhập domain của bạn (VD: n8n.example.com): " N8N_DOMAIN
+        read -p "Nhập domain của bạn (VD: Bietdoitinhnhue.com): " N8N_DOMAIN
     done
 }
 
