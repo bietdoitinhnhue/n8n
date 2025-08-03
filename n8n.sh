@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # ================================================================
-# N8N All-in-One Management Script v3.1 (Anti-Flicker Edition)
+# N8N All-in-One Management Script v3.2 (Anti-Flicker Edition)
 # Dùng cho Ubuntu/Debian. Yêu cầu quyền root.
-# Phiên bản: 3.1
+# Phiên bản: 3.2
 # Phát hành ngày: 03-08-2025
 # Phát triển bởi: Biệt Đội Tinh Nhuệ
-# Liên hệ: https://bietdoitinhnhue.com
+#  Liên hệ: https://bietdoitinhnhue.com
 # ================================================================
 
 # ----------- Cấu hình màu sắc & biến toàn cục -----------
@@ -41,11 +41,11 @@ show_header() {
     # Thay 'clear' bằng mã escape để về đầu màn hình và xóa <--- THAY ĐỔI
     printf '\033[H\033[2J'
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗"
-    echo "║         N8N Management Script v3.1 - Biệt Đội Tinh Nhuệ      ║"
+    echo "║         N8N Management v3.2 - Biệt Đội Tinh Nhuệ             ║"
     echo "║         https://bietdoitinhnhue.com - Phát triển bởi BĐTNH   ║"
-    echo "║         CAFE - Vietcombank - 9968333342                      ║"
-    echo "╠         Phiên bản: 3.1                                       ╣"  
-    echo "║         Phát hành ngày: 03-08-2025                           ║"
+    echo "║         Phiên bản: 3.2 - Phát hành ngày: 03-08-2025          ║"
+    echo "║         Nếu bạn muốn mời mình CAFE                           ║"  
+    echo "║         Vietcombank - 9968333342 - Nguyen Huy Lan            ║"
     echo "╚══════════════════════════════════════════════════════════════╝${NC}"
     echo " Server IP: $SERVER_IP | $(date '+%Y-%m-%d %H:%M:%S') | Uptime: $(uptime -p)"
     if systemctl is-active --quiet n8n; then
@@ -125,6 +125,7 @@ N8N_PROTOCOL="https"
 N8N_PORT=5678
 NODE_ENV="production"
 WEBHOOK_TUNNEL_URL="https://$N8N_DOMAIN/"
+N8N_EDITOR_BASE_URL="https://$N8N_DOMAIN/"
 N8N_BASIC_AUTH_ACTIVE=true
 N8N_BASIC_AUTH_USER=admin
 N8N_BASIC_AUTH_PASSWORD=$N8N_PASSWORD
